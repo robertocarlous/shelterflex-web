@@ -1,13 +1,14 @@
 import React from "react";
 import { ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 import { ResponsiveContainer, AreaChart, Area } from "recharts";
+import { KPISkeleton } from "./ChartSkeleton";
 
 export interface KPICardProps {
   title: string;
   value: string | number;
-  change?: number; // e.g. 12.4 for +12.4%, -3.2 for -3.2%
-  changeLabel?: string; // e.g. "vs last month"
-  sparklineData?: number[]; // array of trend values
+  change?: number;
+  changeLabel?: string;
+  sparklineData?: number[];
   icon?: React.ReactNode;
   isLoading?: boolean;
 }
@@ -21,7 +22,6 @@ export function KPICard({
   icon,
   isLoading = false,
 }: KPICardProps) {
-  // Map raw array of numbers to recharts format
   const chartData = sparklineData.map((val, index) => ({
     name: index.toString(),
     value: val,
@@ -31,20 +31,20 @@ export function KPICard({
   const isNegative = change !== undefined && change < 0;
 
   if (isLoading) {
-    return (
-      <div className="border-3 border-foreground bg-card p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] animate-pulse flex flex-col justify-between h-40">
-        <div>
-          <div className="h-4 w-24 bg-muted border-2 border-foreground/10 mb-2"></div>
-          <div className="h-8 w-32 bg-muted border-2 border-foreground/10"></div>
-        </div>
-        <div className="h-4 w-40 bg-muted border-2 border-foreground/10"></div>
-      </div>
-    );
+    return <KPISkeleton />;
   }
 
+  const changeText =
+    change !== undefined
+      ? `${change > 0 ? "+" : ""}${change}% ${changeLabel}`
+      : "Live updates active";
+
   return (
-    <div className="border-3 border-foreground bg-card p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col justify-between relative overflow-hidden group hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all h-40">
-      {/* Top Section */}
+    <div
+      className="border-3 border-foreground bg-card p-6 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] flex flex-col justify-between relative overflow-hidden group hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] transition-all h-40"
+      role="figure"
+      aria-label={`${title}: ${value}. ${changeText}.`}
+    >
       <div className="flex justify-between items-start z-10">
         <div>
           <span className="font-mono text-xs font-bold text-muted-foreground uppercase tracking-wider block">
@@ -61,7 +61,6 @@ export function KPICard({
         )}
       </div>
 
-      {/* Bottom Section with Sparkline & Trend */}
       <div className="flex items-end justify-between mt-4 z-10">
         <div className="flex items-center gap-1.5">
           {change !== undefined ? (
@@ -95,7 +94,6 @@ export function KPICard({
           )}
         </div>
 
-        {/* Mini Sparkline Chart */}
         <div className="absolute right-2 bottom-2 w-28 h-12 opacity-60 group-hover:opacity-90 transition-opacity">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>

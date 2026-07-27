@@ -11,6 +11,8 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
+import { ChartSkeleton } from "./ChartSkeleton";
+import { ChartEmptyState } from "./ChartEmptyState";
 
 export interface RevenueTimelineItem {
   date: string;
@@ -24,7 +26,6 @@ export interface RevenueChartProps {
   onRangeChange?: (range: "7d" | "30d" | "90d") => void;
 }
 
-// Format full values for tooltip display
 const formatFullCurrency = (val: number) => {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -33,7 +34,6 @@ const formatFullCurrency = (val: number) => {
   }).format(val);
 };
 
-// Format date labels
 const formatDateLabel = (dateStr: string) => {
   try {
     const date = new Date(dateStr);
@@ -43,7 +43,6 @@ const formatDateLabel = (dateStr: string) => {
   }
 };
 
-// Custom Neobrutalist Tooltip — declared at module level to avoid creating during render
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const platformFee = payload.find((p: any) => p.name === "Platform Fee")?.value || 0;
@@ -91,14 +90,11 @@ export function RevenueChart({
     }
   };
 
-  // Pivot the flat list of records by date:
-  // e.g. [{ date: '2026-05-01', feeType: 'platform_fee', amount: 50000 }]
-  // => [{ date: '2026-05-01', 'Platform Fee': 50000, 'Underwriting Fee': 0, total: 50000 }]
   const pivotedData = React.useMemo(() => {
     if (!data || data.length === 0) return [];
-    
+
     const dayMap = new Map<string, Record<string, any>>();
-    
+
     data.forEach((item) => {
       if (!dayMap.has(item.date)) {
         dayMap.set(item.date, {
@@ -108,15 +104,15 @@ export function RevenueChart({
           total: 0,
         });
       }
-      
+
       const record = dayMap.get(item.date)!;
       const cleanType =
         item.feeType === "platform_fee"
           ? "Platform Fee"
           : item.feeType === "underwriting_fee"
             ? "Underwriting Fee"
-            : "Platform Fee"; // fallback
-      
+            : "Platform Fee";
+
       record[cleanType] += item.amount;
       record.total += item.amount;
     });
@@ -124,7 +120,6 @@ export function RevenueChart({
     return Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
   }, [data]);
 
-  // Format currency values nicely (in NGN)
   const formatCurrency = (val: number) => {
     if (val >= 1_000_000) {
       return `₦${(val / 1_000_000).toFixed(1)}M`;
@@ -136,22 +131,21 @@ export function RevenueChart({
   };
 
   if (isLoading) {
-    return (
-      <div className="border-3 border-foreground bg-card p-6 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] animate-pulse flex flex-col justify-between h-[360px]">
-        <div className="flex justify-between items-center mb-4">
-          <div className="h-6 w-48 bg-muted border-2 border-foreground/10"></div>
-          <div className="flex gap-1.5">
-            <div className="h-8 w-12 bg-muted border-2 border-foreground/10"></div>
-            <div className="h-8 w-12 bg-muted border-2 border-foreground/10"></div>
-          </div>
-        </div>
-        <div className="flex-1 w-full bg-muted border-2 border-foreground/10"></div>
-      </div>
-    );
+    return <ChartSkeleton showRangeButtons />;
   }
 
+  const totalRevenue = pivotedData.reduce((sum: number, d: any) => sum + (d.total ?? 0), 0);
+  const summary =
+    pivotedData.length === 0
+      ? "No revenue recorded in this timeframe."
+      : `${pivotedData.length} days of data. Total revenue: ${formatFullCurrency(totalRevenue)}.`;
+
   return (
-    <div className="border-3 border-foreground bg-card p-6 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] flex flex-col justify-between h-[360px] transition-all hover:shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] hover:translate-x-0.5 hover:translate-y-0.5">
+    <div
+      className="border-3 border-foreground bg-card p-6 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] flex flex-col justify-between h-[360px] transition-all hover:shadow-[3px_3px_0px_0px_rgba(26,26,26,1)] hover:translate-x-0.5 hover:translate-y-0.5"
+      role="figure"
+      aria-label={`Platform Revenue chart. ${summary}`}
+    >
       <div className="flex justify-between items-start mb-4">
         <div>
           <h3 className="font-mono text-lg font-black uppercase tracking-tight">Platform Revenue</h3>
@@ -159,7 +153,6 @@ export function RevenueChart({
             MTD Platform share from leases and premium options
           </p>
         </div>
-        {/* Segmented Timeframe Selectors */}
         <div className="flex border-2 border-foreground shadow-[2px_2px_0px_0px_rgba(26,26,26,1)] overflow-hidden">
           {(["7d", "30d", "90d"] as const).map((r) => (
             <button
@@ -179,70 +172,92 @@ export function RevenueChart({
 
       <div className="flex-1 w-full min-h-0">
         {pivotedData.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-foreground/30 font-mono text-sm text-muted-foreground p-4">
-            No revenue recorded in this timeframe
-          </div>
+          <ChartEmptyState
+            title="No revenue recorded in this timeframe"
+            description="Try selecting a different date range to view revenue data."
+          />
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={pivotedData}
-              margin={{ top: 10, right: 5, left: -15, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="colorPlatform" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorUnderwriting" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid
-                stroke="#e2e8f0"
-                strokeDasharray="4"
-                vertical={false}
-              />
-              <XAxis
-                dataKey="date"
-                tickLine={false}
-                axisLine={{ stroke: "#000000", strokeWidth: 2 }}
-                tickFormatter={formatDateLabel}
-                tick={{ fill: "#000000", fontSize: 10, fontWeight: "bold", fontFamily: "monospace" }}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={{ stroke: "#000000", strokeWidth: 2 }}
-                tickFormatter={formatCurrency}
-                tick={{ fill: "#000000", fontSize: 10, fontWeight: "bold", fontFamily: "monospace" }}
-              />
-              <Tooltip content={CustomTooltip} />
-              <Legend
-                verticalAlign="top"
-                height={32}
-                iconType="rect"
-                formatter={(value) => (
-                  <span className="font-mono text-[11px] font-bold text-black uppercase">{value}</span>
-                )}
-              />
-              <Area
-                type="monotone"
-                dataKey="Platform Fee"
-                stroke="#2563eb"
-                strokeWidth={3}
-                fillOpacity={1}
-                fill="url(#colorPlatform)"
-              />
-              <Area
-                type="monotone"
-                dataKey="Underwriting Fee"
-                stroke="#22c55e"
-                strokeWidth={3}
-                fillOpacity={1}
-                fill="url(#colorUnderwriting)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={pivotedData}
+                margin={{ top: 10, right: 5, left: -15, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="colorPlatform" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorUnderwriting" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="#e2e8f0" strokeDasharray="4" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickLine={false}
+                  axisLine={{ stroke: "#000000", strokeWidth: 2 }}
+                  tickFormatter={formatDateLabel}
+                  tick={{ fill: "#000000", fontSize: 10, fontWeight: "bold", fontFamily: "monospace" }}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={{ stroke: "#000000", strokeWidth: 2 }}
+                  tickFormatter={formatCurrency}
+                  tick={{ fill: "#000000", fontSize: 10, fontWeight: "bold", fontFamily: "monospace" }}
+                />
+                <Tooltip content={CustomTooltip} />
+                <Legend
+                  verticalAlign="top"
+                  height={32}
+                  iconType="rect"
+                  formatter={(value) => (
+                    <span className="font-mono text-[11px] font-bold text-black uppercase">{value}</span>
+                  )}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="Platform Fee"
+                  stroke="#2563eb"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorPlatform)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="Underwriting Fee"
+                  stroke="#22c55e"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorUnderwriting)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+            <div className="sr-only">
+              <table>
+                <caption>Platform Revenue</caption>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Platform Fee</th>
+                    <th>Underwriting Fee</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pivotedData.map((row) => (
+                    <tr key={row.date}>
+                      <td>{formatDateLabel(row.date)}</td>
+                      <td>{formatFullCurrency(row["Platform Fee"])}</td>
+                      <td>{formatFullCurrency(row["Underwriting Fee"])}</td>
+                      <td>{formatFullCurrency(row.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

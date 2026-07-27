@@ -12,6 +12,8 @@ import {
   Award,
 } from "lucide-react";
 import { KPICard } from "@/components/admin/KPICard";
+import { ChartErrorBoundary } from "@/components/admin/ChartErrorBoundary";
+import { ChartSkeleton } from "@/components/admin/ChartSkeleton";
 import dynamic from "next/dynamic";
 import {
   getAnalyticsOverview,
@@ -31,12 +33,7 @@ const DealFunnelChart = dynamic(
     })),
   {
     ssr: false,
-    loading: () => (
-      <div className="border-3 border-foreground bg-card p-6 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] animate-pulse flex flex-col justify-between h-[360px]">
-        <div className="h-6 w-48 bg-muted border-2 border-foreground/10 mb-4" />
-        <div className="flex-1 w-full bg-muted border-2 border-foreground/10" />
-      </div>
-    ),
+    loading: () => <ChartSkeleton />,
   },
 );
 
@@ -47,18 +44,7 @@ const RevenueChart = dynamic(
     })),
   {
     ssr: false,
-    loading: () => (
-      <div className="border-3 border-foreground bg-card p-6 shadow-[6px_6px_0px_0px_rgba(26,26,26,1)] animate-pulse flex flex-col justify-between h-[360px]">
-        <div className="flex justify-between items-center mb-4">
-          <div className="h-6 w-48 bg-muted border-2 border-foreground/10" />
-          <div className="flex gap-1.5">
-            <div className="h-8 w-12 bg-muted border-2 border-foreground/10" />
-            <div className="h-8 w-12 bg-muted border-2 border-foreground/10" />
-          </div>
-        </div>
-        <div className="flex-1 w-full bg-muted border-2 border-foreground/10" />
-      </div>
-    ),
+    loading: () => <ChartSkeleton showRangeButtons />,
   },
 );
 
@@ -172,52 +158,64 @@ export function AdminAnalyticsClient() {
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <KPICard
-          title="Total Platform Users"
-          value={loading ? "..." : totalUsers}
-          change={12.4}
-          changeLabel="vs last month"
-          icon={<Users className="w-5 h-5 text-foreground" />}
-          isLoading={loading}
-          sparklineData={[1200, 1310, 1290, 1380, 1490, 1550, 1690, totalUsers || 1792]}
-        />
-        <KPICard
-          title="Active Tenant Deals"
-          value={loading ? "..." : overview?.activeDeals || 0}
-          change={8.2}
-          changeLabel="vs last month"
-          icon={<Activity className="w-5 h-5 text-foreground" />}
-          isLoading={loading}
-          sparklineData={[25, 30, 28, 32, 38, 35, 40, overview?.activeDeals || 42]}
-        />
-        <KPICard
-          title="Revenue (MTD)"
-          value={loading ? "..." : formatCurrency(overview?.revenueMtd || 0)}
-          change={14.7}
-          changeLabel="vs last month"
-          icon={<TrendingUp className="w-5 h-5 text-foreground" />}
-          isLoading={loading}
-          sparklineData={[2800000, 3100000, 2950000, 3400000, 3600000, 3500000, 3850000]}
-        />
-        <KPICard
-          title="Tenant Default Rate"
-          value={loading ? "..." : `${overview?.defaultRate || 0.0}%`}
-          change={-15.3} // default rate went down (good trend)
-          changeLabel="vs last month"
-          icon={<Percent className="w-5 h-5 text-foreground" />}
-          isLoading={loading}
-          sparklineData={[4.2, 3.8, 3.5, 3.1, 2.9, 2.7, 2.5]}
-        />
+        <ChartErrorBoundary chartName="Total Platform Users" onRetry={() => loadData(true)}>
+          <KPICard
+            title="Total Platform Users"
+            value={loading ? "..." : totalUsers}
+            change={12.4}
+            changeLabel="vs last month"
+            icon={<Users className="w-5 h-5 text-foreground" />}
+            isLoading={loading}
+            sparklineData={[1200, 1310, 1290, 1380, 1490, 1550, 1690, totalUsers || 1792]}
+          />
+        </ChartErrorBoundary>
+        <ChartErrorBoundary chartName="Active Tenant Deals" onRetry={() => loadData(true)}>
+          <KPICard
+            title="Active Tenant Deals"
+            value={loading ? "..." : overview?.activeDeals || 0}
+            change={8.2}
+            changeLabel="vs last month"
+            icon={<Activity className="w-5 h-5 text-foreground" />}
+            isLoading={loading}
+            sparklineData={[25, 30, 28, 32, 38, 35, 40, overview?.activeDeals || 42]}
+          />
+        </ChartErrorBoundary>
+        <ChartErrorBoundary chartName="Revenue MTD" onRetry={() => loadData(true)}>
+          <KPICard
+            title="Revenue (MTD)"
+            value={loading ? "..." : formatCurrency(overview?.revenueMtd || 0)}
+            change={14.7}
+            changeLabel="vs last month"
+            icon={<TrendingUp className="w-5 h-5 text-foreground" />}
+            isLoading={loading}
+            sparklineData={[2800000, 3100000, 2950000, 3400000, 3600000, 3500000, 3850000]}
+          />
+        </ChartErrorBoundary>
+        <ChartErrorBoundary chartName="Tenant Default Rate" onRetry={() => loadData(true)}>
+          <KPICard
+            title="Tenant Default Rate"
+            value={loading ? "..." : `${overview?.defaultRate || 0.0}%`}
+            change={-15.3}
+            changeLabel="vs last month"
+            icon={<Percent className="w-5 h-5 text-foreground" />}
+            isLoading={loading}
+            sparklineData={[4.2, 3.8, 3.5, 3.1, 2.9, 2.7, 2.5]}
+          />
+        </ChartErrorBoundary>
       </div>
 
       {/* Interactive Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <RevenueChart
-          data={revenue}
-          isLoading={loading}
-          onRangeChange={handleRangeChange}
-        />
-        <DealFunnelChart data={funnel || undefined} isLoading={loading} />
+        <ChartErrorBoundary chartName="Platform Revenue" onRetry={() => handleRangeChange(revenueRange)}>
+          <RevenueChart
+            data={revenue}
+            isLoading={loading}
+            onRangeChange={handleRangeChange}
+          />
+        </ChartErrorBoundary>
+        <ChartErrorBoundary chartName="Deal Funnel" onRetry={() => loadData(true)}>
+          <DealFunnelChart data={funnel || undefined} isLoading={loading} />
+        </ChartErrorBoundary>
       </div>
 
       {/* Listing Quality & Operations Section */}

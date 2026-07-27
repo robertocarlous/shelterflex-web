@@ -16,12 +16,14 @@ import {
   ImageIcon,
   File,
   ChevronLeft,
+  ChevronDown,
   MessageSquareOff,
   MessageCircle,
   Lock,
   AlertCircle,
   Loader2,
   RefreshCw,
+  SearchX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,138 +34,136 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { conversations, messageThreads } from "@/lib/mockData";
 import useAuthStore from "@/store/useAuthStore";
 import { sanitizeText } from "@/lib/sanitize";
-
-type Message = {
-  id: number;
-  senderId: "me" | "other";
-  text: string;
-  timestamp: string;
-  status: "sending" | "sent" | "delivered" | "read" | "failed";
-  attachment?: { type: "image" | "document"; name: string };
-};
+import { useMessaging } from "@/hooks/useMessaging";
 
 export default function MessagesPage() {
   const { isAuthenticated } = useAuthStore();
-  const [selectedConversationId, setSelectedConversationId] = useState<
-    number | null
-  >(1);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [drafts, setDrafts] = useState<Record<number, string>>({});
-  
-  const newMessage = selectedConversationId !== null ? drafts[selectedConversationId] || "" : "";
+  const {
+    conversations,
+    isLoadingConversations,
+    conversationsError,
+    refetchConversations,
+    selectedConversationId,
+    selectConversation,
+    searchQuery,
+    setSearchQuery,
+    isSearching,
+    messages,
+    isLoadingMessages,
+    messagesError,
+    refetchMessages,
+    hasMoreMessages,
+    loadOlderMessages,
+    isLoadingOlder,
+    sendMessage,
+    retryMessage,
+    isSending,
+    setDraft,
+    getDraft,
+  } = useMessaging();
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const shouldAutoScrollRef = useRef(true);
+  const prevMessageCountRef = useRef(0);
+
+  const newMessage = selectedConversationId !== null ? getDraft(selectedConversationId) : "";
   const setNewMessage = (val: string) => {
     if (selectedConversationId !== null) {
-      setDrafts(prev => ({ ...prev, [selectedConversationId]: val }));
+      setDraft(selectedConversationId, val);
     }
   };
 
-  const [messages, setMessages] = useState<Message[]>(messageThreads[1] ?? []);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [isSending, setIsSending] = useState(false);
-  const [isLoadingThread, setIsLoadingThread] = useState(false);
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    shouldAutoScrollRef.current = true;
+    setShowJumpToLatest(false);
+  }, []);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const handleScroll = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const atBottom = distanceFromBottom < 50;
+
+    setIsAtBottom(atBottom);
+    setShowJumpToLatest(!atBottom && messages.length > 0);
+
+    if (atBottom) {
+      shouldAutoScrollRef.current = true;
+    }
+  }, [messages.length]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [handleScroll]);
+
+  useEffect(() => {
+    const newCount = messages.length;
+    const prevCount = prevMessageCountRef.current;
+
+    if (newCount > prevCount && shouldAutoScrollRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+
+    prevMessageCountRef.current = newCount;
+  }, [messages.length]);
+
+  useEffect(() => {
+    if (selectedConversationId && !isLoadingMessages && messages.length > 0) {
+      setTimeout(() => scrollToBottom("instant"), 0);
+    }
+  }, [selectedConversationId, isLoadingMessages, messages.length, scrollToBottom]);
 
   const handleSelectConversation = useCallback((id: number) => {
-    setSelectedConversationId(id);
-    setIsLoadingThread(true);
-    setMessages([]);
-    setTimeout(() => {
-      setMessages(messageThreads[id] || []);
-      setIsLoadingThread(false);
-    }, 300);
-  }, []);
+    selectConversation(id);
+    shouldAutoScrollRef.current = true;
+    setShowJumpToLatest(false);
+  }, [selectConversation]);
 
-  const simulateSend = useCallback(async (text: string): Promise<boolean> => {
-    await new Promise((r) => setTimeout(r, 800));
-    if (Math.random() > 0.15) return true;
-    throw new Error("Send failed");
-  }, []);
+  const handleLoadOlder = useCallback(async () => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const prevScrollHeight = container.scrollHeight;
+
+    await loadOlderMessages();
+
+    requestAnimationFrame(() => {
+      const newScrollHeight = container.scrollHeight;
+      const heightDiff = newScrollHeight - prevScrollHeight;
+      container.scrollTop += heightDiff;
+    });
+  }, [loadOlderMessages]);
 
   const handleSendMessage = useCallback(async () => {
     const text = sanitizeText(newMessage).trim();
     if (!text || isSending) return;
 
-    const optimisticMsg: Message = {
-      id: Date.now(),
-      senderId: "me",
-      text,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      status: "sending",
-    };
-
-    setMessages((prev) => [...prev, optimisticMsg]);
     setNewMessage("");
-    setIsSending(true);
+    await sendMessage(text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newMessage, isSending, sendMessage]);
 
-    try {
-      await simulateSend(text);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === optimisticMsg.id ? { ...m, status: "sent" } : m,
-        ),
-      );
-    } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === optimisticMsg.id ? { ...m, status: "failed" } : m,
-        ),
-      );
-    } finally {
-      setIsSending(false);
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
     }
-  }, [newMessage, isSending, simulateSend]);
+  }, [handleSendMessage]);
 
-  const handleRetry = useCallback(async (failedMsg: Message) => {
-    if (isSending) return;
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === failedMsg.id ? { ...m, status: "sending" } : m,
-      ),
-    );
-    setIsSending(true);
+  const selectedConv = conversations.find(c => c.id === selectedConversationId);
 
-    try {
-      await simulateSend(failedMsg.text);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === failedMsg.id ? { ...m, status: "sent" } : m,
-        ),
-      );
-    } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === failedMsg.id ? { ...m, status: "failed" } : m,
-        ),
-      );
-    } finally {
-      setIsSending(false);
-    }
-  }, [isSending, simulateSend]);
-
-  const filteredConversations = conversations.filter(
-    (conv) =>
-      conv.participant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      conv.property.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
-
-  const selectedConv = conversations.find(
-    (c) => c.id === selectedConversationId,
-  );
-
-  // Show auth gate if not authenticated
   if (!isAuthenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background pt-20">
@@ -198,7 +198,6 @@ export default function MessagesPage() {
     );
   }
 
-
   return (
     <div className="flex h-screen bg-background pt-20">
       {/* Conversations List */}
@@ -226,24 +225,63 @@ export default function MessagesPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="border-3 border-foreground pl-10 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)]"
             />
+            {isSearching && (
+              <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+            )}
           </div>
         </div>
 
         <div className="h-[calc(100vh-180px)] overflow-y-auto">
-          {filteredConversations.length === 0 ? (
+          {isLoadingConversations && conversations.length === 0 ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : conversationsError ? (
             <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-              <div className="flex h-16 w-16 items-center justify-center border-3 border-foreground bg-muted">
-                <MessageSquareOff className="h-8 w-8 text-muted-foreground" />
+              <div className="flex h-16 w-16 items-center justify-center border-3 border-foreground bg-destructive/10">
+                <AlertCircle className="h-8 w-8 text-destructive" />
               </div>
-              <h3 className="mt-4 font-bold">No conversations found</h3>
+              <h3 className="mt-4 font-bold">Error loading conversations</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                {searchQuery
-                  ? "Try a different search term"
-                  : "Your messages will appear here"}
+                {conversationsError.message}
               </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetchConversations()}
+                className="mt-4 border-2 border-foreground"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Retry
+              </Button>
+            </div>
+          ) : conversations.length === 0 ? (
+            <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+              {searchQuery ? (
+                <>
+                  <div className="flex h-16 w-16 items-center justify-center border-3 border-foreground bg-muted">
+                    <SearchX className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="mt-4 font-bold">No results found</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    No conversations match &ldquo;{searchQuery}&rdquo;. Try a
+                    different search term.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex h-16 w-16 items-center justify-center border-3 border-foreground bg-muted">
+                    <MessageSquareOff className="h-8 w-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="mt-4 font-bold">No conversations yet</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Your messages will appear here once you start a conversation.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
-            filteredConversations.map((conv) => (
+            conversations.map((conv) => (
               <button
                 key={conv.id}
                 aria-label={`Select conversation with ${conv.participant.name}`}
@@ -303,7 +341,7 @@ export default function MessagesPage() {
             <div className="flex items-center gap-2 md:gap-4">
               {/* Mobile back button */}
               <button
-                onClick={() => setSelectedConversationId(null)}
+                onClick={() => selectConversation(null)}
                 aria-label="Back to conversations"
                 className="flex h-10 w-10 items-center justify-center border-3 border-foreground bg-muted md:hidden"
               >
@@ -370,6 +408,7 @@ export default function MessagesPage() {
 
           {/* Messages */}
           <div
+            ref={messagesContainerRef}
             className="flex-1 overflow-y-auto bg-muted/30 p-6"
             role="log"
             aria-live="polite"
@@ -400,9 +439,48 @@ export default function MessagesPage() {
                 </div>
               </Card>
 
-              {isLoadingThread ? (
+              {/* Load older messages */}
+              {hasMoreMessages && (
+                <div className="flex justify-center py-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleLoadOlder}
+                    disabled={isLoadingOlder}
+                    className="border-2 border-foreground bg-transparent text-xs font-bold"
+                  >
+                    {isLoadingOlder ? (
+                      <>
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      "Load older messages"
+                    )}
+                  </Button>
+                </div>
+              )}
+
+              {isLoadingMessages ? (
                 <div className="flex justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : messagesError ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <AlertCircle className="h-12 w-12 text-destructive" />
+                  <p className="mt-4 font-bold">Error loading messages</p>
+                  <p className="text-sm text-muted-foreground">
+                    {messagesError.message}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refetchMessages()}
+                    className="mt-4 border-2 border-foreground"
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Retry
+                  </Button>
                 </div>
               ) : messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -470,7 +548,7 @@ export default function MessagesPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleRetry(message)}
+                            onClick={() => retryMessage(message.id)}
                             disabled={isSending}
                             className="border-2 border-destructive text-destructive text-xs font-bold"
                           >
@@ -485,6 +563,19 @@ export default function MessagesPage() {
               )}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Jump to latest button */}
+            {showJumpToLatest && (
+              <div className="sticky bottom-4 flex justify-center">
+                <Button
+                  onClick={() => scrollToBottom("smooth")}
+                  className="border-3 border-foreground bg-card shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] transition-all hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(26,26,26,1)]"
+                >
+                  <ChevronDown className="mr-2 h-4 w-4" />
+                  Jump to latest
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Message Input */}
@@ -501,12 +592,7 @@ export default function MessagesPage() {
                 placeholder="Type your message..."
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
+                onKeyDown={handleKeyDown}
                 disabled={isSending}
                 className="flex-1 border-3 border-foreground py-4 shadow-[4px_4px_0px_0px_rgba(26,26,26,1)] md:py-6"
               />

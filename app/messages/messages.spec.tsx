@@ -1,6 +1,18 @@
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import MessagesPage from "./page";
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+
+const mockSelectConversation = vi.fn();
+const mockSendMessage = vi.fn();
+const mockRetryMessage = vi.fn();
+const mockLoadOlderMessages = vi.fn();
+const mockSetSearchQuery = vi.fn();
+
+let draftStore: Record<number, string> = {};
+const mockSetDraft = vi.fn((id: number, text: string) => {
+  draftStore[id] = text;
+});
+const mockGetDraft = vi.fn((id: number) => draftStore[id] || "");
 
 vi.mock("@/store/useAuthStore", () => ({
   default: () => ({
@@ -8,44 +20,97 @@ vi.mock("@/store/useAuthStore", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useMessaging", () => ({
+  useMessaging: () => ({
+    conversations: [
+      {
+        id: 1,
+        participant: {
+          id: "user-1",
+          name: "Adebayo Johnson",
+          role: "Whistleblower",
+          avatar: "AJ",
+          online: true,
+        },
+        property: "Modern 3 Bedroom Flat",
+        lastMessage: "Great property! You'll love the neighborhood",
+        timestamp: "2 min ago",
+        unread: 2,
+      },
+      {
+        id: 2,
+        participant: {
+          id: "user-2",
+          name: "Mrs. Adeleke",
+          role: "Landlord",
+          avatar: "MA",
+          online: false,
+        },
+        property: "Modern 2 Bedroom Flat",
+        lastMessage: "The maintenance has been completed",
+        timestamp: "1 hour ago",
+        unread: 0,
+      },
+    ],
+    isLoadingConversations: false,
+    conversationsError: null,
+    selectedConversationId: 1,
+    selectConversation: mockSelectConversation,
+    searchQuery: "",
+    setSearchQuery: mockSetSearchQuery,
+    isSearching: false,
+    messages: [
+      {
+        id: 1,
+        senderId: "me",
+        text: "Hi Adebayo, is the apartment still available?",
+        timestamp: "2:30 PM",
+        status: "read",
+      },
+      {
+        id: 2,
+        senderId: "other",
+        text: "Yes! It's still available. Would you like to schedule a viewing?",
+        timestamp: "2:32 PM",
+        status: "read",
+      },
+    ],
+    isLoadingMessages: false,
+    messagesError: null,
+    hasMoreMessages: true,
+    loadOlderMessages: mockLoadOlderMessages,
+    isLoadingOlder: false,
+    sendMessage: mockSendMessage,
+    retryMessage: mockRetryMessage,
+    isSending: false,
+    drafts: draftStore,
+    setDraft: mockSetDraft,
+    getDraft: mockGetDraft,
+  }),
+}));
+
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
 
 describe("MessagesPage", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.clearAllMocks();
+    draftStore = {};
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it("preserves draft text when switching between conversations", async () => {
+  it("calls setDraft when typing a message", () => {
     render(<MessagesPage />);
 
     const input = screen.getByPlaceholderText(/type your message/i);
-
     fireEvent.change(input, { target: { value: "Draft for conversation 1" } });
-    expect(input).toHaveValue("Draft for conversation 1");
 
-    const conv2 = screen.getByLabelText(/Select conversation with Mrs. Adeleke/i);
-    fireEvent.click(conv2);
-
-    act(() => { vi.advanceTimersByTime(300); });
-
-    expect(input).toHaveValue("");
-
-    fireEvent.change(input, { target: { value: "Draft for conversation 2" } });
-    expect(input).toHaveValue("Draft for conversation 2");
-
-    const conv1 = screen.getByLabelText(/Select conversation with Adebayo Johnson/i);
-    fireEvent.click(conv1);
-
-    act(() => { vi.advanceTimersByTime(300); });
-
-    expect(input).toHaveValue("Draft for conversation 1");
+    expect(mockSetDraft).toHaveBeenCalledWith(1, "Draft for conversation 1");
   });
 
-  it("handles mobile navigation correctly by clearing selection on back button click", () => {
+  it("calls selectConversation with null on back button click", () => {
     render(<MessagesPage />);
 
     expect(screen.getByText(/Adebayo Johnson/i, { selector: "h2" })).toBeInTheDocument();
@@ -53,47 +118,22 @@ describe("MessagesPage", () => {
     const backButton = screen.getByLabelText("Back to conversations");
     fireEvent.click(backButton);
 
-    expect(screen.getByText(/Select a conversation/i)).toBeInTheDocument();
+    expect(mockSelectConversation).toHaveBeenCalledWith(null);
   });
 
-  it("shows sending state then sent state after message is sent", async () => {
+  it("disables send button when message input is empty", () => {
     render(<MessagesPage />);
 
-    const input = screen.getByPlaceholderText(/type your message/i);
-    fireEvent.change(input, { target: { value: "Hello!" } });
-
     const sendBtn = screen.getByLabelText("Send message");
-    fireEvent.click(sendBtn);
-
-    expect(screen.getByText("Hello!")).toBeInTheDocument();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(800);
-    });
-
-    expect(screen.getByText("Hello!")).toBeInTheDocument();
+    expect(sendBtn).toBeDisabled();
   });
 
-  it("shows retry button when message send fails", async () => {
-    // Force simulateSend to fail by making Math.random() > 1
-    vi.spyOn(Math, "random").mockReturnValue(1);
-
+  it("enables send button when there is text in the draft", () => {
+    draftStore[1] = "Hello from draft";
     render(<MessagesPage />);
 
-    const input = screen.getByPlaceholderText(/type your message/i);
-    fireEvent.change(input, { target: { value: "Will fail" } });
-
     const sendBtn = screen.getByLabelText("Send message");
-    fireEvent.click(sendBtn);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(800);
-    });
-
-    const retryBtn = screen.getByText("Retry");
-    expect(retryBtn).toBeInTheDocument();
-
-    vi.restoreAllMocks();
+    expect(sendBtn).not.toBeDisabled();
   });
 
   it("has accessible message thread region", () => {
@@ -104,25 +144,19 @@ describe("MessagesPage", () => {
     expect(log).toHaveAttribute("aria-live", "polite");
   });
 
-  it("sanitizes message text", () => {
+  it("renders conversation messages from mock data", () => {
     render(<MessagesPage />);
 
-    const input = screen.getByPlaceholderText(/type your message/i);
-    const maliciousText = "<script>alert('xss')</script>Hello";
-    fireEvent.change(input, { target: { value: maliciousText } });
-
-    expect(screen.getByPlaceholderText(/type your message/i)).toHaveValue(maliciousText);
+    expect(screen.getByText("Hi Adebayo, is the apartment still available?")).toBeInTheDocument();
+    expect(screen.getByText(/Yes! It's still available/)).toBeInTheDocument();
   });
 
-  it("prevents duplicate sends", () => {
+  it("calls setSearchQuery when typing in search input", () => {
     render(<MessagesPage />);
 
-    const input = screen.getByPlaceholderText(/type your message/i);
-    fireEvent.change(input, { target: { value: "Test message" } });
+    const searchInput = screen.getByPlaceholderText(/search conversations/i);
+    fireEvent.change(searchInput, { target: { value: "test" } });
 
-    const sendBtn = screen.getByLabelText("Send message");
-    fireEvent.click(sendBtn);
-
-    expect(sendBtn).toBeDisabled();
+    expect(mockSetSearchQuery).toHaveBeenCalledWith("test");
   });
 });

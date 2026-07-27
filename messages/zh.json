@@ -91,6 +91,26 @@
     "thisWeek": "本周",
     "thisMonth": "本月"
   },
+  "payment": {
+    "fullPayment": "全额付款",
+    "reviewDistribution": "确认前请查看付款分配方式。",
+    "rewardDistribution": "奖励分配",
+    "platformFee": "平台费用",
+    "platformFeeSubLabel": "涵盖平台运营费用",
+    "reporterReward": "举报人奖励",
+    "reporterRewardSubLabel": "支付给房产举报人",
+    "noReporter": "此房产没有举报人",
+    "landlordPayout": "房东付款",
+    "totalCharged": "总收费",
+    "confirmPayment": "确认付款",
+    "processing": "处理中…",
+    "receipt": "付款收据",
+    "reference": "参考编号",
+    "paymentConfirmed": "付款已确认",
+    "loadingDetails": "正在加载付款详情…",
+    "somethingWentWrong": "出了点问题",
+    "tryAgain": "重试"
+  },
   "errors": {
     "generic": "出错了",
     "networkError": "网络错误。请检查您的连接。",
